@@ -1,0 +1,32 @@
+server:
+  port: 8081
+  servlet:
+    context-path: /api
+
+spring:
+  application:
+    name: workflow-manager
+  datasource:
+    url: jdbc:postgresql://localhost:5432/workflow_db
+    username: oss_user
+    password: oss_pass
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: true
+    
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: workflow-group
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    groups-order: DESC
+    operationsSorter: method
+  api-docs:
+    path: /api-docs
