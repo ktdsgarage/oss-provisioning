@@ -28,4 +28,4 @@ public class FacilityMapper {
         facility.setSpecifications(dto.getSpecifications());
         return facility;
     }
-}}
+}

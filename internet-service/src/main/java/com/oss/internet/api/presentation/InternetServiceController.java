@@ -37,4 +37,3 @@ public class InternetServiceController {
         return ResponseEntity.ok().build();
     }
 }
-}

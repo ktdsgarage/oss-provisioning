@@ -1,5 +1,6 @@
 package com.oss.internet.api.application.dto;
 
+import com.oss.internet.api.domain.BookStatus;
 import lombok.Getter;
 import lombok.Setter;
 
