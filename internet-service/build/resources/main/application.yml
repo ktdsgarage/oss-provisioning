@@ -8,12 +8,16 @@ spring:
     name: internet-service
   datasource:
     url: jdbc:postgresql://localhost:5432/internet_db
-    username: oss_user
-    password: oss_pass
+    username: postgres
+    password: oss-pass
   jpa:
     hibernate:
-      ddl-auto: validate
+      ddl-auto: update
     show-sql: true
+    # 아래 설정 추가
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
     
   kafka:
     bootstrap-servers: localhost:9092

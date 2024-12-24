@@ -8,7 +8,7 @@ spring:
     name: kos-integration
   datasource:
     url: jdbc:postgresql://localhost:5432/kos_db
-    username: oss_user
+    username: postgres
     password: oss_pass
   jpa:
     hibernate:

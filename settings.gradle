@@ -1,6 +1,6 @@
 rootProject.name = 'oss-provisioning'
 
-include 'workflow-manager'
-include 'internet-service'
-include 'iptv-service' 
-include 'kos-integration'
+['common', 'workflow-manager', 'internet-service', 'iptv-service', 'kos-integration'].each {
+    include it
+    project(":${it}").projectDir = file(it)
+}
