@@ -1,0 +1,93 @@
+pipeline {
+    agent any
+
+    environment {
+        ACR_URL = "acrLego.azurecr.io"
+        ACR_CREDENTIALS = credentials('acr-credentials')
+        GITHUB_CREDENTIALS = credentials('github-credentials')
+        MANIFEST_REPO = "https://github.com/DG-Team-LEGO/MODERN-OSS-SOMF-K8S-MANIFEST.git"
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Build') {
+            steps {
+                sh './gradlew clean build -x test'
+            }
+        }
+
+        stage('Test') {
+            steps {
+                sh './gradlew test'
+            }
+        }
+
+        stage('Build Docker Images') {
+            parallel {
+                stage('Workflow Manager') {
+                    steps {
+                        sh """
+                            docker build -t ${ACR_URL}/workflow-manager:${BUILD_NUMBER} -f deployment/Dockerfile.workflow .
+                            docker push ${ACR_URL}/workflow-manager:${BUILD_NUMBER}
+                        """
+                    }
+                }
+                stage('Internet Service') {
+                    steps {
+                        sh """
+                            docker build -t ${ACR_URL}/internet-service:${BUILD_NUMBER} -f deployment/Dockerfile.internet .
+                            docker push ${ACR_URL}/internet-service:${BUILD_NUMBER}
+                        """
+                    }
+                }
+                stage('IPTV Service') {
+                    steps {
+                        sh """
+                            docker build -t ${ACR_URL}/iptv-service:${BUILD_NUMBER} -f deployment/Dockerfile.iptv .
+                            docker push ${ACR_URL}/iptv-service:${BUILD_NUMBER}
+                        """
+                    }
+                }
+                stage('KOS Integration') {
+                    steps {
+                        sh """
+                            docker build -t ${ACR_URL}/kos-integration:${BUILD_NUMBER} -f deployment/Dockerfile.kos .
+                            docker push ${ACR_URL}/kos-integration:${BUILD_NUMBER}
+                        """
+                    }
+                }
+            }
+        }
+
+//         stage('Update Manifests') {
+//             steps {
+//                 withCredentials([usernamePassword(credentialsId: 'github-credentials', passwordVariable: 'GIT_PASSWORD', usernameVariable: 'GIT_USERNAME')]) {
+//                     sh """
+//                         git clone https://github.com/DG-Team-LEGO/MODERN-OSS-SOMF-K8S-MANIFEST.git
+//                         cd MODERN-OSS-SOMF-K8S-MANIFEST
+//                         sed -i 's|image: .*workflow-manager:.*|image: ${ACR_URL}/workflow-manager:${BUILD_NUMBER}|' base/workflow-manager/deployment.yaml
+//                         sed -i 's|image: .*internet-service:.*|image: ${ACR_URL}/internet-service:${BUILD_NUMBER}|' base/internet-service/deployment.yaml
+//                         sed -i 's|image: .*iptv-service:.*|image: ${ACR_URL}/iptv-service:${BUILD_NUMBER}|' base/iptv-service/deployment.yaml
+//                         sed -i 's|image: .*kos-integration:.*|image: ${ACR_URL}/kos-integration:${BUILD_NUMBER}|' base/kos-integration/deployment.yaml
+//                         git config user.email "jenkins@example.com"
+//                         git config user.name "Jenkins"
+//                         git add .
+//                         git commit -m "Update image tags to ${BUILD_NUMBER}"
+//                         git push https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/DG-Team-LEGO/MODERN-OSS-SOMF-K8S-MANIFEST.git main
+//                     """
+//                 }
+//             }
+//         }
+    }
+
+    post {
+        always {
+            cleanWs()
+        }
+    }
+}
