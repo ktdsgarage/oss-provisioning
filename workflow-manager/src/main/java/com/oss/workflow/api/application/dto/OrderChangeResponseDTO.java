@@ -1,13 +1,15 @@
 package com.oss.workflow.api.application.dto;
 
+import lombok.Builder;
 import lombok.Getter;
-import lombok.Setter;
 
 @Getter
-@Setter
-public class OrderChangeRequest {
+@Builder
+public class OrderChangeResponseDTO {
+    private String orderId;
+    private String status;
+    private String message;
     private String changeType;
     private String changeDetails;
     private String requestDate;
-    private String orderType;
 }

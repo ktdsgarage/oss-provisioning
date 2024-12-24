@@ -4,9 +4,12 @@ import com.oss.workflow.api.application.dto.*;
 import com.oss.workflow.api.domain.Workflow;
 import com.oss.workflow.api.domain.Task;
 import com.oss.workflow.api.infrastructure.WorkflowRepository;
+import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.*;
 
 @Service
 @RequiredArgsConstructor
@@ -55,9 +58,31 @@ public class WorkflowService {
                 .build();
     }
 
+    @Transactional
+    public OrderChangeResponseDTO changeOrder(String orderId, OrderChangeRequest request) {
+        Workflow workflow = new Workflow();
+        workflow.setOrderType(request.getOrderType());
+        workflowRepository.save(workflow);
+
+        return OrderChangeResponseDTO.builder()
+                .orderId(workflow.getOrderId())
+                .changeType(workflow.getChangeType())
+                .status("CREATED")
+                .message("Order created successfully")
+                .build();
+    }
+
     private String calculateEstimatedTime(Task task) {
         if (task == null) return null;
         // 각 Task 타입별 예상 소요시간 계산 로직
         return "30분";
     }
+
+    @Transactional(readOnly = true)
+    public DeploymentStatusDTO getDeploymentStatus() {
+        // 필요시 로직 추가
+        return null;
+    }
+
 }
+
