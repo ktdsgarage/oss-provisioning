@@ -25,7 +25,10 @@ public class Workflow extends BaseEntity {
     
     @Column(nullable = false)
     private String orderId;
-    
+
+    @Column(nullable = false)
+    private String changeType;
+
     @Column(nullable = false) 
     private String customerId;
     
