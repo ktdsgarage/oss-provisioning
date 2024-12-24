@@ -18,6 +18,7 @@ pipeline {
         stage('Initialize') {
                 steps {
                 sh 'chmod +x gradlew'
+                sh 'gradle wrapper'
             }
         }
 
