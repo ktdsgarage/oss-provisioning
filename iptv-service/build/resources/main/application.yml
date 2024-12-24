@@ -8,11 +8,11 @@ spring:
     name: iptv-service
   datasource:
     url: jdbc:postgresql://localhost:5432/iptv_db
-    username: oss_user
-    password: oss_pass
+    username: postgres
+    password: oss-pass
   jpa:
     hibernate:
-      ddl-auto: validate
+      ddl-auto: update
     show-sql: true
     
   kafka:
