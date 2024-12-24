@@ -2,6 +2,7 @@ package com.oss.iptv.api.application;
 
 import com.oss.iptv.api.application.dto.*;
 import com.oss.iptv.api.domain.Auth;
+import com.oss.iptv.api.domain.AuthStatus;
 import com.oss.iptv.api.infrastructure.AuthRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.kafka.core.KafkaTemplate;

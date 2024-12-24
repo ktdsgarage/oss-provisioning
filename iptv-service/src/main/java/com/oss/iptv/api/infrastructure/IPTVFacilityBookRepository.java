@@ -7,5 +7,7 @@ import java.util.Optional;
 
 public interface IPTVFacilityBookRepository extends JpaRepository<IPTVFacilityBook, Long> {
     Optional<IPTVFacilityBook> findByOrderId(String orderId);
+
     Optional<IPTVFacilityBook> findByBookId(String bookId);
+}
 

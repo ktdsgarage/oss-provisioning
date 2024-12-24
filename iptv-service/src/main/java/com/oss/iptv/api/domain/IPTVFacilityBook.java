@@ -6,26 +6,27 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
-
 @Entity
-@Table(name = "auths")
+@Table(name = "iptv_facility_books")
 @Getter
 @Setter
 @NoArgsConstructor
-public class Auth extends BaseEntity {
-    
+public class IPTVFacilityBook extends BaseEntity {
+
     @Column(nullable = false)
-    private String authId;
-    
+    private String bookId;
+
     @Column(nullable = false)
     private String orderId;
-    
+
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "auth_id")
+    private Auth auth;
+
     @Enumerated(EnumType.STRING)
-    private AuthStatus status;
-    
-    @Column(length = 4000)
-    private String channelConfig;
-    
-    private LocalDateTime validationDate;
+    private BookStatus status;
+
+    private String remarks;
+    private String operatorId;
+    private String workDetails;
 }
