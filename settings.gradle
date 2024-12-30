@@ -4,3 +4,4 @@ rootProject.name = 'oss-provisioning'
     include it
     project(":${it}").projectDir = file(it)
 }
+

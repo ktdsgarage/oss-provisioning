@@ -6,6 +6,7 @@ import lombok.Setter;
 @Getter
 @Setter
 public class NewOrderRequest {
+    private String orderId;
     private String orderType;
     private String productCode;
     private String customerId;

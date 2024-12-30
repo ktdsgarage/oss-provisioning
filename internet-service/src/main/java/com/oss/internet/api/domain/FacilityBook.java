@@ -1,6 +1,7 @@
 package com.oss.internet.api.domain;
 
 import com.oss.internet.common.BaseEntity;
+import com.oss.internet.enums.BookStatus;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;

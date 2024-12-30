@@ -1,6 +1,8 @@
 package com.oss.internet.api.domain;
 
 import com.oss.internet.common.BaseEntity;
+import com.oss.internet.enums.DeviceStatus;
+import com.oss.internet.enums.DeviceType;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;

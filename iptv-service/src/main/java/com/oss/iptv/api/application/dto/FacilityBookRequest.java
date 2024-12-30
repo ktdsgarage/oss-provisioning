@@ -7,6 +7,6 @@ import lombok.Setter;
 @Setter
 public class FacilityBookRequest {
     private String orderId;
-    private String authId;
+    private Long authId;  // String -> Long으로 변경
     private String status;
 }

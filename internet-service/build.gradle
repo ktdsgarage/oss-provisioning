@@ -3,3 +3,8 @@ apply plugin: 'org.springframework.boot'
 dependencies {
     implementation project(':common')
 }
+
+bootJar {
+    archiveFileName = "internet-service.jar"
+}
+

@@ -3,3 +3,7 @@ apply plugin: 'org.springframework.boot'
 dependencies {
     implementation project(':common')
 }
+
+bootJar {
+    archiveFileName = "kos-integration.jar"
+}

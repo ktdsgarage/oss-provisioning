@@ -1,0 +1,190 @@
+# ConfigMap 생성
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oss-provisioning-config
+data:
+  POSTGRES_HOST: "postgres-oss-provisioning-postgresql-primary-hl"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "telecomdb"
+  
+  # Kafka 설정 추가
+  KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+  KAFKA_KEY_SERIALIZER: org.apache.kafka.common.serialization.StringSerializer
+  KAFKA_VALUE_SERIALIZER: org.springframework.kafka.support.serializer.JsonSerializer
+
+  # Spring 설정
+  SPRING_PROFILES_ACTIVE: "prod"
+  SERVER_PORT: "8080"
+  JPA_DDL_AUTO: "update"
+  JPA_SHOW_SQL: "true"
+
+---
+# Secret 생성
+apiVersion: v1
+kind: Secret
+metadata:
+  name: oss-provisioning-secret
+stringData:
+  # Database 접속 정보
+  POSTGRES_USER: "postgres"
+  POSTGRES_PASSWORD: "Passw0rd"
+
+---
+# Workflow Manager Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workflow-manager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: workflow-manager
+  template:
+    metadata:
+      labels:
+        app: workflow-manager
+    spec:
+      containers:
+      - name: workflow-manager
+        image: unicorncr.azurecr.io/telecom/workflow-manager:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+        envFrom:
+        - configMapRef:
+            name: oss-provisioning-config
+        - secretRef:
+            name: oss-provisioning-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: workflow-manager
+spec:
+  selector:
+    app: workflow-manager
+  ports:
+  - port: 8080
+    targetPort: 8080
+  type: LoadBalancer
+---
+# Internet Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: internet-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: internet-service
+  template:
+    metadata:
+      labels:
+        app: internet-service
+    spec:
+      containers:
+      - name: internet-service
+        image: unicorncr.azurecr.io/telecom/internet-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+        envFrom:
+        - configMapRef:
+            name: oss-provisioning-config
+        - secretRef:
+            name: oss-provisioning-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: internet-service
+spec:
+  selector:
+    app: internet-service
+  ports:
+  - port: 8080
+    targetPort: 8080
+  type: LoadBalancer
+
+---
+# IPTV Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iptv-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: iptv-service
+  template:
+    metadata:
+      labels:
+        app: iptv-service
+    spec:
+      containers:
+      - name: iptv-service
+        image: unicorncr.azurecr.io/telecom/iptv-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+        envFrom:
+        - configMapRef:
+            name: oss-provisioning-config
+        - secretRef:
+            name: oss-provisioning-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: iptv-service
+spec:
+  selector:
+    app: iptv-service
+  ports:
+  - port: 8080
+    targetPort: 8080
+  type: LoadBalancer
+
+---
+# KOS Integration Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kos-integration
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kos-integration
+  template:
+    metadata:
+      labels:
+        app: kos-integration
+    spec:
+      containers:
+      - name: kos-integration
+        image: unicorncr.azurecr.io/telecom/kos-integration:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+        envFrom:
+        - configMapRef:
+            name: oss-provisioning-config
+        - secretRef:
+            name: oss-provisioning-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kos-integration
+spec:
+  selector:
+    app: kos-integration
+  ports:
+  - port: 8080
+    targetPort: 8080
+  type: LoadBalancer

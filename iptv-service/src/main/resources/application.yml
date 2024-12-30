@@ -1,5 +1,5 @@
 server:
-  port: 8083
+  port: ${SERVER_PORT:8080}s
   servlet:
     context-path: /api
 
@@ -7,15 +7,18 @@ spring:
   application:
     name: iptv-service
   datasource:
-    url: jdbc:postgresql://localhost:5432/iptv_db
-    username: postgres
-    password: oss-pass
+    url: jdbc:postgresql://${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
+    username: ${POSTGRES_USER}
+    password: ${POSTGRES_PASSWORD}
   jpa:
     hibernate:
       ddl-auto: update
     show-sql: true
     
   kafka:
-    bootstrap-servers: localhost:9092
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    producer:
+      key-serializer: ${KAFKA_KEY_SERIALIZER:org.apache.kafka.common.serialization.StringSerializer}
+      value-serializer: ${KAFKA_VALUE_SERIALIZER:org.springframework.kafka.support.serializer.JsonSerializer}
     consumer:
       group-id: iptv-group

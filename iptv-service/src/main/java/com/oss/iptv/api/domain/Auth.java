@@ -14,10 +14,16 @@ import java.time.LocalDateTime;
 @Setter
 @NoArgsConstructor
 public class Auth extends BaseEntity {
-    
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
     @Column(nullable = false)
     private String authId;
-    
+
+    @Column(nullable = false)
+    private String taskId;
+
     @Column(nullable = false)
     private String orderId;
     
@@ -26,6 +32,6 @@ public class Auth extends BaseEntity {
     
     @Column(length = 4000)
     private String channelConfig;
-    
+
     private LocalDateTime validationDate;
 }

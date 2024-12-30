@@ -1,3 +1,4 @@
+// workflow-manager/src/main/java/com/oss/workflow/api/domain/Workflow.java
 package com.oss.workflow.api.domain;
 
 import com.oss.workflow.common.BaseEntity;
@@ -19,24 +20,31 @@ public class Workflow extends BaseEntity {
 
     @Column(nullable = false)
     private String workflowId;
-    
+
     @Column(nullable = false)
     private String orderType;
-    
+
     @Column(nullable = false)
     private String orderId;
 
     @Column(nullable = false)
     private String changeType;
 
-    @Column(nullable = false) 
+    @Column(nullable = false)
     private String customerId;
-    
+
     @Enumerated(EnumType.STRING)
     private WorkflowStatus status;
-    
+
     private LocalDateTime startDate;
     private LocalDateTime endDate;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "workflow_def_id")
+    private WorkflowDef workflowDef;
+
+    @Column(columnDefinition = "TEXT")
+    private String parameters;
 
     @OneToMany(mappedBy = "workflow", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Task> tasks = new ArrayList<>();

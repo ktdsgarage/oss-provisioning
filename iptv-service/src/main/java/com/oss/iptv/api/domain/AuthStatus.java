@@ -4,5 +4,6 @@ public enum AuthStatus {
     PENDING,
     PROCESSING,
     AUTHORIZED,
-    FAILED
+    FAILED,
+    CANCELLED
 }
