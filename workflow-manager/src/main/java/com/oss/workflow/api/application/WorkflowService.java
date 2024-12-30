@@ -42,7 +42,6 @@ public class WorkflowService {
         String payload = serializeToJson(request);
 
         publishEvent("workflow.order.requested",
-                eventId,
                 null,
                 request.getOrderId(),
                 "ORDER_REQUESTED",
@@ -60,7 +59,6 @@ public class WorkflowService {
     public void cancelWorkflow(String workflowId) {
         // WORKFLOW_CANCEL_REQUESTED 이벤트 발행
         publishEvent("workflow.cancel.requested",
-                UUID.randomUUID().toString(),
                 workflowId,
                 null,
                 "WORKFLOW_CANCEL_REQUESTED",
@@ -73,7 +71,6 @@ public class WorkflowService {
         String payload = serializeToJson(request);
 
         publishEvent("workflow.order.change.requested",
-                UUID.randomUUID().toString(),
                 null,
                 orderId,
                 "ORDER_CHANGE_REQUESTED",
@@ -100,14 +97,12 @@ public class WorkflowService {
             // WORKFLOW_CREATED 이벤트 발행
             if("INTERNET".equals(request.getOrderType())) {
                 publishEvent("internet.workflow.created",
-                        UUID.randomUUID().toString(),
                         workflowId,
                         event.getOrderId(),
                         "WORKFLOW_CREATED",
                         event.getPayload());
             } else {
                 publishEvent("iptv.workflow.created",
-                        UUID.randomUUID().toString(),
                         workflowId,
                         event.getOrderId(),
                         "WORKFLOW_CREATED",
@@ -116,7 +111,6 @@ public class WorkflowService {
         } catch (Exception e) {
             log.error("Failed to handle order requested event", e);
             publishEvent("workflow.error",
-                    UUID.randomUUID().toString(),
                     null,
                     event.getOrderId(),
                     "ORDER_CREATION_FAILED",
@@ -134,7 +128,6 @@ public class WorkflowService {
 
             // WORKFLOW_STARTED 이벤트 발행
             publishEvent("workflow.started",
-                    UUID.randomUUID().toString(),
                     workflow.getWorkflowId(),
                     event.getOrderId(),
                     "WORKFLOW_STARTED",
@@ -142,7 +135,6 @@ public class WorkflowService {
         } catch (Exception e) {
             log.error("Failed to handle workflow created event", e);
             publishEvent("workflow.error",
-                    UUID.randomUUID().toString(),
                     event.getWorkflowId(),
                     event.getOrderId(),
                     "WORKFLOW_START_FAILED",
@@ -169,7 +161,6 @@ public class WorkflowService {
 
             // WORKFLOW_CANCELLED 이벤트 발행
             publishEvent("workflow.cancelled",
-                    UUID.randomUUID().toString(),
                     workflow.getWorkflowId(),
                     event.getOrderId(),
                     "WORKFLOW_CANCELLED",
@@ -177,7 +168,6 @@ public class WorkflowService {
         } catch (Exception e) {
             log.error("Failed to handle cancel requested event", e);
             publishEvent("workflow.error",
-                    UUID.randomUUID().toString(),
                     event.getWorkflowId(),
                     event.getOrderId(),
                     "WORKFLOW_CANCEL_FAILED",
@@ -198,7 +188,6 @@ public class WorkflowService {
 
             // ORDER_CHANGED 이벤트 발행
             publishEvent("workflow.order.changed",
-                    UUID.randomUUID().toString(),
                     workflow.getWorkflowId(),
                     event.getOrderId(),
                     "ORDER_CHANGED",
@@ -206,7 +195,6 @@ public class WorkflowService {
         } catch (Exception e) {
             log.error("Failed to handle order change requested event", e);
             publishEvent("workflow.error",
-                    UUID.randomUUID().toString(),
                     event.getWorkflowId(),
                     event.getOrderId(),
                     "ORDER_CHANGE_FAILED",
@@ -216,18 +204,22 @@ public class WorkflowService {
 
     // 유틸리티 메서드들
     private String createWorkflow(String orderType, Object parameters) {
+        NewOrderRequest request = convertToOrderRequest(parameters);
+
         Workflow workflow = new Workflow();
         workflow.setWorkflowId("WF" + UUID.randomUUID().toString());
         workflow.setOrderType(orderType);
         workflow.setStatus(WorkflowStatus.NEW);
+        workflow.setStartDate(LocalDateTime.now());
+        workflow.setChangeType("NEW");
+        workflow.setCustomerId(request.getCustomerId());
+        workflow.setOrderId(request.getOrderId());
 
         try {
             workflow.setParameters(objectMapper.writeValueAsString(parameters));
         } catch (JsonProcessingException e) {
             throw new RuntimeException("Failed to serialize parameters", e);
         }
-
-        workflow.setStartDate(LocalDateTime.now());
 
         Task task = new Task();
         task.setTaskId("T" + UUID.randomUUID().toString());
@@ -239,6 +231,17 @@ public class WorkflowService {
         workflowRepository.save(workflow);
 
         return workflow.getWorkflowId();
+    }
+
+    private NewOrderRequest convertToOrderRequest(Object parameters) {
+        try {
+            if (parameters instanceof NewOrderRequest) {
+                return (NewOrderRequest) parameters;
+            }
+            return objectMapper.convertValue(parameters, NewOrderRequest.class);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Failed to convert parameters to NewOrderRequest", e);
+        }
     }
 
     private void startWorkflow(Workflow workflow) {
@@ -255,9 +258,9 @@ public class WorkflowService {
         }
     }
 
-    private void publishEvent(String topic, String eventId, String workflowId, String orderId, String eventType, String payload) {
+    private void publishEvent(String topic, String workflowId, String orderId, String eventType, String payload) {
         WorkflowEvent event = WorkflowEvent.builder()
-                .eventId(eventId)
+                .eventId(UUID.randomUUID().toString())  // eventId는 이벤트 생성 시점에 할당
                 .workflowId(workflowId)
                 .orderId(orderId)
                 .eventType(eventType)

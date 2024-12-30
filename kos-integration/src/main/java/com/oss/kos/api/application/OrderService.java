@@ -1,5 +1,6 @@
 package com.oss.kos.api.application;
 
+import com.oss.common.dto.WorkflowEventDTO;
 import com.oss.common.event.WorkflowEvent;
 import com.oss.kos.api.application.dto.*;
 import lombok.RequiredArgsConstructor;
@@ -28,11 +29,11 @@ public class OrderService {
     @Transactional
     public ProvisioningResponseDTO processOrder(ProvisioningRequest request) {
         // ACL 변환 및 이벤트 발행
-        Object event = aclService.transformRequest(request);
+        WorkflowEventDTO event = aclService.transformRequest(request);
         kafkaTemplate.send(determineTopicByOrderType(request.getOrderType()), event);
         
         return ProvisioningResponseDTO.builder()
-                .orderId(generateOrderId())
+                .orderId(event.getOrderId())
                 .status("ACCEPTED")
                 .message("Order request accepted successfully")
                 .build();
@@ -50,10 +51,6 @@ public class OrderService {
 
     private String determineTopicByOrderType(String orderType) {
         return orderType.equalsIgnoreCase("INTERNET") ? "internet.request" : "iptv.request";
-    }
-
-    private String generateOrderId() {
-        return "ORD" + System.currentTimeMillis();
     }
 
     public void handleError(String workflowId, String message, Exception e) {

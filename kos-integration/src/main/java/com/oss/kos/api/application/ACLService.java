@@ -1,29 +1,32 @@
+// kos-integration/src/main/java/com/oss/kos/api/application/ACLService.java
 package com.oss.kos.api.application;
 
+import com.oss.common.dto.WorkflowEventDTO;
 import com.oss.kos.api.application.dto.*;
 import com.oss.kos.api.domain.OrderStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 public class ACLService {
-    
-    public Object transformRequest(ProvisioningRequest request) {
-        // KOS 요청을 내부 이벤트로 변환
+
+    public WorkflowEventDTO transformRequest(ProvisioningRequest request) {
         return WorkflowEventDTO.builder()
+                .eventId(UUID.randomUUID().toString())
+                .orderId(generateOrderId())
                 .eventType("ORDER_CREATED")
-                .orderType(request.getOrderType())
-                .productCode(request.getProductCode())
                 .customerId(request.getCustomerId())
+                .productCode(request.getProductCode())
                 .build();
+
     }
 
-    public CompletionResponse transformResponse(Object event) {
-        // 내부 이벤트를 KOS 응답으로 변환
+    public CompletionResponse transformResponse(WorkflowEventDTO event) {
         return CompletionResponse.builder()
-                .orderId(generateOrderId())
+                .orderId(event.getOrderId())
                 .status(OrderStatus.COMPLETED.name())
                 .message("Order completed successfully")
                 .completionTime(LocalDateTime.now())
