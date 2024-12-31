@@ -1,4 +1,4 @@
-package com.oss.iptv.api.domain;
+package com.oss.iptv.enums;
 
 public enum AuthStatus {
     PENDING,

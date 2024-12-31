@@ -1,6 +1,7 @@
 package com.oss.iptv.api.domain;
 
 import com.oss.iptv.common.BaseEntity;
+import com.oss.iptv.enums.AuthStatus;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;

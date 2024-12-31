@@ -9,8 +9,15 @@ import com.oss.common.constants.KafkaConstants;
 import com.oss.iptv.api.application.dto.ChannelConfigRequest;
 import com.oss.iptv.api.application.dto.FacilityBookRequest;
 import com.oss.iptv.api.domain.Auth;
-import com.oss.iptv.api.domain.AuthStatus;
+import com.oss.iptv.api.domain.ChannelConfig;
+import com.oss.iptv.api.domain.IPTVFacilityBook;
+import com.oss.iptv.enums.AuthStatus;
+import com.oss.iptv.enums.BookStatus;
+import com.oss.iptv.enums.ConfigStatus;
 import com.oss.iptv.api.infrastructure.AuthRepository;
+import com.oss.iptv.api.infrastructure.ChannelConfigRepository;
+import com.oss.iptv.api.infrastructure.IPTVFacilityBookRepository;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
@@ -20,10 +27,10 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 
-import java.io.PrintWriter;
-import java.io.StringWriter;
 import java.time.LocalDateTime;
 import java.util.UUID;
+
+import static org.apache.commons.lang3.exception.ExceptionUtils.getStackTrace;
 
 @Slf4j
 @Service
@@ -31,6 +38,8 @@ import java.util.UUID;
 public class IPTVService {
 
     private final AuthRepository authRepository;
+    private final ChannelConfigRepository channelConfigRepository;
+    private final IPTVFacilityBookRepository iptvFacilityBookRepository;
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final ObjectMapper objectMapper;
 
@@ -39,25 +48,14 @@ public class IPTVService {
         if (parameters instanceof AuthRequest) {
             return processAuth((AuthRequest) parameters);
         } else if (parameters instanceof ChannelConfigRequest) {
-            return processChannelConfig((ChannelConfigRequest) parameters);
+            processChannelConfig((ChannelConfigRequest) parameters);
+            return null;
         } else if (parameters instanceof FacilityBookRequest) {
-            return updateFacilityBook((FacilityBookRequest) parameters);
+            updateFacilityBook((FacilityBookRequest) parameters);
+            return null;
         } else {
             throw new IllegalArgumentException("Unsupported parameters type");
         }
-    }
-
-    @Transactional(readOnly = true)
-    public TaskResult getTaskStatus(String taskId) {
-        Auth auth = authRepository.findByTaskId(taskId)
-                .orElseThrow(() -> new RuntimeException("Auth not found"));
-
-        return TaskResult.builder()
-                .taskId(taskId)
-                .success(auth.getStatus() == AuthStatus.AUTHORIZED)
-                .message(auth.getStatus().name())
-                .result(auth)
-                .build();
     }
 
     @Transactional
@@ -74,25 +72,41 @@ public class IPTVService {
     }
 
     @Transactional
-    public Auth processChannelConfig(ChannelConfigRequest request) {
+    public ChannelConfig processChannelConfig(ChannelConfigRequest request) {
         Auth auth = authRepository.findByOrderId(request.getOrderId())
                 .orElseThrow(() -> new RuntimeException("Auth not found"));
 
-        auth.setChannelConfig(request.getChannelConfig());
-        auth = authRepository.save(auth);
-        kafkaTemplate.send(KafkaConstants.TOPIC_IPTV_CHANNEL_CONFIGURED, auth);
+        ChannelConfig config = new ChannelConfig();
+        config.setConfigId(UUID.randomUUID().toString());
+        config.setOrderId(request.getOrderId());
+        config.setAuth(auth);
+        config.setChannelList(request.getChannelConfig());
+        config.setStatus(ConfigStatus.CONFIGURING);
 
-        return auth;
+        config = channelConfigRepository.save(config);
+        kafkaTemplate.send(KafkaConstants.TOPIC_IPTV_CHANNEL_CONFIGURED, config);
+
+        return config;
     }
 
     @Transactional
-    public Auth updateFacilityBook(FacilityBookRequest request) {
+    public IPTVFacilityBook updateFacilityBook(FacilityBookRequest request) {
         Auth auth = authRepository.findById(request.getAuthId())
                 .orElseThrow(() -> new RuntimeException("Auth not found"));
 
-        kafkaTemplate.send(KafkaConstants.TOPIC_IPTV_FACILITYBOOK_UPDATED, request);
+        ChannelConfig config = channelConfigRepository.findByOrderId(request.getOrderId())
+                .orElseThrow(() -> new RuntimeException("Channel config not found"));
 
-        return auth;
+        IPTVFacilityBook facilityBook = new IPTVFacilityBook();
+        facilityBook.setBookId(UUID.randomUUID().toString());
+        facilityBook.setOrderId(request.getOrderId());
+        facilityBook.setAuth(auth);
+        facilityBook.setChannelConfig(config);
+        facilityBook.setStatus(BookStatus.valueOf(request.getStatus()));
+        facilityBook = iptvFacilityBookRepository.save(facilityBook);
+        kafkaTemplate.send(KafkaConstants.TOPIC_IPTV_FACILITYBOOK_UPDATED, facilityBook);
+
+        return facilityBook;
     }
 
     @Transactional
@@ -173,10 +187,16 @@ public class IPTVService {
         }
     }
 
-    private String getStackTrace(Exception e) {
-        StringWriter sw = new StringWriter();
-        PrintWriter pw = new PrintWriter(sw);
-        e.printStackTrace(pw);
-        return sw.toString();
+    @Transactional(readOnly = true)
+    public TaskResult getTaskStatus(String taskId) {
+        Auth auth = authRepository.findByTaskId(taskId)
+                .orElseThrow(() -> new RuntimeException("Auth not found"));
+
+        return TaskResult.builder()
+                .taskId(taskId)
+                .success(auth.getStatus() == AuthStatus.AUTHORIZED)
+                .message(auth.getStatus().name())
+                .result(auth)
+                .build();
     }
 }
