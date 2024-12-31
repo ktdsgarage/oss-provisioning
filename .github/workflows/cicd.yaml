@@ -1,0 +1,160 @@
+name: OSS Provisioning CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  REGISTRY: unicorncr.azurecr.io
+  IMAGE_ORG: telecom
+  RESOURCE_GROUP: tiu-dgga-rg
+  CLUSTER_NAME: unicorn-aks
+  NAMESPACE: unicorn-oss-provisioning-ns
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 23
+        uses: actions/setup-java@v3
+        with:
+          java-version: '23'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build applications
+        run: |
+          ./gradlew workflow-manager:clean workflow-manager:build -x test
+          ./gradlew internet-service:clean internet-service:build -x test
+          ./gradlew iptv-service:clean iptv-service:build -x test
+          ./gradlew kos-integration:clean kos-integration:build -x test
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: app-builds
+          path: |
+            workflow-manager/build/libs/*.jar
+            internet-service/build/libs/*.jar
+            iptv-service/build/libs/*.jar
+            kos-integration/build/libs/*.jar
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.timestamp.outputs.value }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate timestamp for image tag
+        id: timestamp
+        run: echo "value=$(date +'%Y%m%d%H%M%S')" >> $GITHUB_OUTPUT
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: app-builds
+
+      - name: Log in to Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Log in to ACR
+        run: |
+          az acr login --name unicorncr
+
+      - name: Build and push container images
+        env:
+          IMAGE_TAG: ${{ steps.timestamp.outputs.value }}
+        run: |
+          for service in workflow-manager internet-service iptv-service kos-integration; do
+            docker build -f deployment/Dockerfile-$service \
+              -t ${{ env.REGISTRY }}/${{ env.IMAGE_ORG }}/$service:$IMAGE_TAG \
+              -t ${{ env.REGISTRY }}/${{ env.IMAGE_ORG }}/$service:latest .
+          
+            docker push ${{ env.REGISTRY }}/${{ env.IMAGE_ORG }}/$service:$IMAGE_TAG
+            docker push ${{ env.REGISTRY }}/${{ env.IMAGE_ORG }}/$service:latest
+          done
+
+  deploy:
+    needs: release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install envsubst
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gettext-base
+
+      - name: Log in to Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set AKS context
+        uses: azure/aks-set-context@v3
+        with:
+          resource-group: ${{ env.RESOURCE_GROUP }}
+          cluster-name: ${{ env.CLUSTER_NAME }}
+
+      - name: Create namespace if not exists
+        run: |
+          kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Generate deployment manifest
+        env:
+          IMAGE_TAG: ${{ needs.release.outputs.image_tag }}
+        run: |
+          export namespace=${{ env.NAMESPACE }}
+          export workflow_manager_image_path=${{ env.REGISTRY }}/${{ env.IMAGE_ORG }}/workflow-manager:$IMAGE_TAG
+          export internet_service_image_path=${{ env.REGISTRY }}/${{ env.IMAGE_ORG }}/internet-service:$IMAGE_TAG
+          export iptv_service_image_path=${{ env.REGISTRY }}/${{ env.IMAGE_ORG }}/iptv-service:$IMAGE_TAG
+          export kos_integration_image_path=${{ env.REGISTRY }}/${{ env.IMAGE_ORG }}/kos-integration:$IMAGE_TAG
+          export resources_requests_cpu=250m
+          export resources_requests_memory=512Mi
+          export resources_limits_cpu=500m
+          export resources_limits_memory=1024Mi
+          
+          envsubst < deployment/deploy.yaml.template > deployment/deploy.yaml
+          
+          echo "Generated manifest:"
+          cat deployment/deploy.yaml
+
+      - name: Deploy to AKS
+        run: |
+          kubectl apply -f deployment/deploy.yaml
+          
+          for service in workflow-manager internet-service iptv-service kos-integration; do
+            echo "Waiting for ${service} pods..."
+            kubectl wait --for=condition=ready pod -l "app=${service}" -n ${{ env.NAMESPACE }} --timeout=300s
+          done
+
+      - name: Verify deployment
+        run: |
+          echo "Verifying service endpoints..."
+          
+          for service in workflow-manager internet-service iptv-service kos-integration; do
+            IP=$(kubectl get svc ${service} -n ${{ env.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+            echo "${service} Service IP: ${IP}"
+          
+            if [ -z "${IP}" ]; then
+              echo "Error: ${service} IP not available"
+              exit 1
+            fi
+          done
