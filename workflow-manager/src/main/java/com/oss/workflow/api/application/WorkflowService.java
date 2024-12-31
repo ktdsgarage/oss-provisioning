@@ -232,6 +232,81 @@ public class WorkflowService {
         kafkaTemplate.send(topic, event);
     }
 
+    @Transactional
+    public void handleError(String workflowId, String message, Exception e) {
+        log.error("Error in workflow {}: {} - {}", workflowId, message, e.getMessage(), e);
+
+        // 워크플로우 상태 업데이트
+        if (workflowId != null) {
+            Workflow workflow = workflowRepository.findByWorkflowId(workflowId)
+                    .orElseThrow(() -> new IllegalArgumentException("Workflow not found: " + workflowId));
+            workflow.setStatus(WorkflowStatus.FAILED);
+            workflowRepository.save(workflow);
+        }
+
+        // 에러 이벤트 발행
+        WorkflowEvent errorEvent = WorkflowEvent.builder()
+                .eventId(UUID.randomUUID().toString())
+                .workflowId(workflowId)
+                .eventType(KafkaConstants.EVENT_WORKFLOW_ERROR)
+                .timestamp(LocalDateTime.now())
+                .payload(String.format("Error: %s - %s", message, e.getMessage()))
+                .build();
+
+        publishEvent(KafkaConstants.TOPIC_WORKFLOW_ERROR,
+                workflowId,
+                null,
+                KafkaConstants.EVENT_WORKFLOW_ERROR,
+                errorEvent.getPayload());
+    }
+
+    @Transactional
+    public void updateWorkflowStatus(String workflowId, WorkflowStatus status, String message) {
+        log.debug("Updating workflow {} status to {} with message: {}", workflowId, status, message);
+
+        try {
+            // 워크플로우 조회
+            Workflow workflow = workflowRepository.findByWorkflowId(workflowId)
+                    .orElseThrow(() -> new IllegalArgumentException("Workflow not found: " + workflowId));
+
+            // 상태 업데이트
+            workflow.setStatus(status);
+
+            // 완료 또는 실패 시 종료일시 기록
+            if (status == WorkflowStatus.COMPLETED || status == WorkflowStatus.FAILED) {
+                workflow.setEndDate(LocalDateTime.now());
+            }
+
+            // 저장
+            workflowRepository.save(workflow);
+
+            // 상태 변경 이벤트 발행
+            String eventType = status == WorkflowStatus.COMPLETED ?
+                    KafkaConstants.EVENT_WORKFLOW_COMPLETED :
+                    KafkaConstants.EVENT_WORKFLOW_ERROR;
+
+            WorkflowEvent statusEvent = WorkflowEvent.builder()
+                    .eventId(UUID.randomUUID().toString())
+                    .workflowId(workflowId)
+                    .eventType(eventType)
+                    .timestamp(LocalDateTime.now())
+                    .payload(message)
+                    .build();
+
+            publishEvent(status == WorkflowStatus.COMPLETED ?
+                            KafkaConstants.TOPIC_WORKFLOW_COMPLETED :
+                            KafkaConstants.TOPIC_WORKFLOW_ERROR,
+                    workflowId,
+                    workflow.getOrderId(),
+                    eventType,
+                    message);
+
+        } catch (Exception e) {
+            log.error("Failed to update workflow status", e);
+            handleError(workflowId, "Failed to update workflow status", e);
+        }
+    }
+
     @Transactional(readOnly = true)
     public WorkflowStatus getWorkflowStatus(String workflowId) {
         return workflowRepository.findByWorkflowId(workflowId)

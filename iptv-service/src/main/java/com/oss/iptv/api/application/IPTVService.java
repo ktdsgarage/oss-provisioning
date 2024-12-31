@@ -63,6 +63,7 @@ public class IPTVService {
     @Transactional
     public Auth processAuth(AuthRequest request) {
         Auth auth = new Auth();
+        auth.setAuthId(UUID.randomUUID().toString());
         auth.setOrderId(request.getOrderId());
         auth.setStatus(AuthStatus.PROCESSING);
 

@@ -10,8 +10,8 @@ import com.oss.internet.api.application.dto.TaskParameters;
 import com.oss.internet.api.domain.*;
 import com.oss.internet.api.infrastructure.*;
 import com.oss.internet.api.domain.Device;
-import com.oss.internet.enums.DeviceStatus;
-import com.oss.internet.enums.FacilityStatus;
+import com.oss.internet.api.domain.FacilityBook;
+import com.oss.internet.enums.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -31,14 +31,16 @@ public class InternetService {
 
     private final FacilityRepository facilityRepository;
     private final DeviceRepository deviceRepository;
+    private final FacilityBookRepository facilityBookRepository;
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final ObjectMapper objectMapper;
 
     @Transactional
     public Object processFacility(TaskParameters params) {
         Facility facility = new Facility();
+        facility.setFacilityId(UUID.randomUUID().toString());
         facility.setOrderId(params.getOrderId());
-        facility.setType(params.getFacilityType());
+        facility.setType(FacilityType.OPTICAL_LINE);
         facility.setStatus(FacilityStatus.PROCESSING);
 
         facilityRepository.save(facility);
@@ -50,8 +52,9 @@ public class InternetService {
     @Transactional
     public Object processDevice(TaskParameters params) {
         Device device = new Device();
+        device.setDeviceId(UUID.randomUUID().toString());
         device.setOrderId(params.getOrderId());
-        device.setDeviceId(params.getDeviceId());
+        device.setType(DeviceType.ROUTER);
         device.setStatus(DeviceStatus.CONFIGURING);
 
         deviceRepository.save(device);
@@ -62,8 +65,18 @@ public class InternetService {
 
     @Transactional
     public Object updateFacilityBook(TaskParameters params) {
-        kafkaTemplate.send(KafkaConstants.TOPIC_INTERNET_FACILITYBOOK_UPDATED, params);
-        return params;
+        // 1. 원부 정보 조회
+        FacilityBook facilityBook = facilityBookRepository.findByOrderId(params.getOrderId())
+                .orElseThrow(() -> new IllegalArgumentException("FacilityBook not found"));
+
+        // 2. 상태 업데이트
+        facilityBook.setStatus(BookStatus.COMPLETED);
+        facilityBookRepository.save(facilityBook);
+
+        // 3. 이벤트 발행
+        kafkaTemplate.send(KafkaConstants.TOPIC_INTERNET_FACILITYBOOK_UPDATED, facilityBook);
+
+        return facilityBook;
     }
 
     @Transactional

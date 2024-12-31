@@ -1,100 +1,186 @@
-pipeline {
-    agent any
+def PIPELINE_ID = "oss-provisioning-${env.BUILD_NUMBER}"
 
-    environment {
-        ACR_URL = "acrLego.azurecr.io"
-        ACR_CREDENTIALS = credentials('acr-credentials')
-        GITHUB_CREDENTIALS = credentials('github-credentials')
-        MANIFEST_REPO = "https://github.com/DG-Team-LEGO/MODERN-OSS-SOMF-K8S-MANIFEST.git"
+def getImageTag() {
+    def dateFormat = new java.text.SimpleDateFormat('yyyyMMddHHmmss')
+    def currentDate = new Date()
+    return dateFormat.format(currentDate)
+}
+
+def checkError(message) {
+    if (currentBuild.result == "FAILURE") {
+        error "Failed: ${message}"
     }
+}
 
-    stages {
-        stage('Checkout') {
-            steps {
-                checkout scm
-            }
+podTemplate(
+    label: "${PIPELINE_ID}",
+    serviceAccount: 'jenkins',
+    containers: [
+        containerTemplate(name: 'gradle', image: 'gradle:jdk17', ttyEnabled: true, command: 'cat'),
+        containerTemplate(name: 'podman', image: "mgoltzsche/podman", ttyEnabled: true, command: 'cat', privileged: true),
+        containerTemplate(
+            name: 'azure-cli',
+            image: 'hiondal/azure-kubectl:latest',
+            command: 'cat',
+            ttyEnabled: true,
+            envVars: [
+                envVar(key: 'HOME', value: '/home/jenkins')
+            ]
+        ),
+        containerTemplate(name: 'envsubst', image: "hiondal/envsubst", command: 'sleep', args: '1h')
+    ],
+    volumes: [
+        emptyDirVolume(mountPath: '/home/gradle/.gradle', memory: false),
+        emptyDirVolume(mountPath: '/root/.azure', memory: false)
+    ]
+) {
+    node(PIPELINE_ID) {
+        // Environment variables
+        def props
+        def imageTag = getImageTag()
+        def manifest = "deploy.yaml"
+        def services = ['workflow-manager', 'internet-service', 'iptv-service', 'kos-integration']
+
+        stage("Get Source") {
+            checkout scm
+            props = readProperties file: "deployment/deploy_env_vars"
         }
 
-        stage('Initialize') {
-                steps {
-                sh 'chmod +x gradlew'
-            }
-        }
-
-
-        stage('Build') {
-            steps {
-                sh './gradlew clean build -x test'
-            }
-        }
-
-        stage('Test') {
-            steps {
-                sh './gradlew test'
-            }
-        }
-
-        stage('Build Docker Images') {
-            parallel {
-                stage('Workflow Manager') {
-                    steps {
+        try {
+            stage("Setup AKS") {
+                container('azure-cli') {
+                    withCredentials([azureServicePrincipal('azure-credentials')]) {
                         sh """
-                            docker build -t ${ACR_URL}/workflow-manager:${BUILD_NUMBER} -f deployment/Dockerfile.workflow .
-                            docker push ${ACR_URL}/workflow-manager:${BUILD_NUMBER}
+                            az login --service-principal -u \$AZURE_CLIENT_ID -p \$AZURE_CLIENT_SECRET -t \$AZURE_TENANT_ID
+                            az aks get-credentials --resource-group ${props.resource_group} --name ${props.teamid}-aks --overwrite-existing
+                            kubectl create namespace ${props.namespace} --dry-run=client -o yaml | kubectl apply -f -
                         """
                     }
                 }
-                stage('Internet Service') {
-                    steps {
-                        sh """
-                            docker build -t ${ACR_URL}/internet-service:${BUILD_NUMBER} -f deployment/Dockerfile.internet .
-                            docker push ${ACR_URL}/internet-service:${BUILD_NUMBER}
-                        """
-                    }
-                }
-                stage('IPTV Service') {
-                    steps {
-                        sh """
-                            docker build -t ${ACR_URL}/iptv-service:${BUILD_NUMBER} -f deployment/Dockerfile.iptv .
-                            docker push ${ACR_URL}/iptv-service:${BUILD_NUMBER}
-                        """
-                    }
-                }
-                stage('KOS Integration') {
-                    steps {
-                        sh """
-                            docker build -t ${ACR_URL}/kos-integration:${BUILD_NUMBER} -f deployment/Dockerfile.kos .
-                            docker push ${ACR_URL}/kos-integration:${BUILD_NUMBER}
-                        """
-                    }
-                }
+                checkError("AKS Setup Failed")
             }
-        }
 
-//         stage('Update Manifests') {
-//             steps {
-//                 withCredentials([usernamePassword(credentialsId: 'github-credentials', passwordVariable: 'GIT_PASSWORD', usernameVariable: 'GIT_USERNAME')]) {
-//                     sh """
-//                         git clone https://github.com/DG-Team-LEGO/MODERN-OSS-SOMF-K8S-MANIFEST.git
-//                         cd MODERN-OSS-SOMF-K8S-MANIFEST
-//                         sed -i 's|image: .*workflow-manager:.*|image: ${ACR_URL}/workflow-manager:${BUILD_NUMBER}|' base/workflow-manager/deployment.yaml
-//                         sed -i 's|image: .*internet-service:.*|image: ${ACR_URL}/internet-service:${BUILD_NUMBER}|' base/internet-service/deployment.yaml
-//                         sed -i 's|image: .*iptv-service:.*|image: ${ACR_URL}/iptv-service:${BUILD_NUMBER}|' base/iptv-service/deployment.yaml
-//                         sed -i 's|image: .*kos-integration:.*|image: ${ACR_URL}/kos-integration:${BUILD_NUMBER}|' base/kos-integration/deployment.yaml
-//                         git config user.email "jenkins@example.com"
-//                         git config user.name "Jenkins"
-//                         git add .
-//                         git commit -m "Update image tags to ${BUILD_NUMBER}"
-//                         git push https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/DG-Team-LEGO/MODERN-OSS-SOMF-K8S-MANIFEST.git main
-//                     """
-//                 }
-//             }
-//         }
-    }
+            stage('Build Applications') {
+                container('gradle') {
+                    services.each { service ->
+                        sh """
+                            chmod +x gradlew
+                            ./gradlew ${service}:clean ${service}:build -x test
+                        """
+                    }
+                }
+                checkError("Application Build Failed")
+            }
 
-    post {
-        always {
-            cleanWs()
+            stage('Build Container Images') {
+                container('podman') {
+                    services.each { service ->
+                        def imagePath = "${props.registry}/${props.image_org}/${service}"
+                        sh """
+                            podman build -f deployment/Dockerfile-${service} \
+                                -t ${imagePath}:${imageTag} \
+                                -t ${imagePath}:latest .
+                        """
+                    }
+                }
+                checkError("Container Image Build Failed")
+            }
+
+            stage('Push Container Images') {
+                container('podman') {
+                    withCredentials([usernamePassword(
+                        credentialsId: "${props.image_credential}",
+                        usernameVariable: 'USERNAME',
+                        passwordVariable: 'PASSWORD'
+                    )]) {
+                        sh """
+                            podman login ${props.registry} --username \$USERNAME --password \$PASSWORD
+                        """
+                        
+                        services.each { service ->
+                            def imagePath = "${props.registry}/${props.image_org}/${service}"
+                            sh """
+                                podman push ${imagePath}:${imageTag}
+                                podman push ${imagePath}:latest
+                            """
+                        }
+                    }
+                }
+                checkError("Container Image Push Failed")
+            }
+
+            stage('Generate Deployment YAML') {
+                container('envsubst') {
+                    def imagePaths = [:]
+                    services.each { service ->
+                        imagePaths[service] = "${props.registry}/${props.image_org}/${service}:${imageTag}"
+                    }
+
+                    sh """
+                        # Export variables for envsubst
+                        export namespace=${props.namespace}
+                        export workflow_manager_image_path=${imagePaths['workflow-manager']}
+                        export internet_service_image_path=${imagePaths['internet-service']}
+                        export iptv_service_image_path=${imagePaths['iptv-service']}
+                        export kos_integration_image_path=${imagePaths['kos-integration']}
+                        export resources_requests_cpu=${props.resources_requests_cpu}
+                        export resources_requests_memory=${props.resources_requests_memory}
+                        export resources_limits_cpu=${props.resources_limits_cpu}
+                        export resources_limits_memory=${props.resources_limits_memory}
+
+                        # Generate deployment file
+                        envsubst < deployment/${manifest}.template > deployment/${manifest}
+                        
+                        # Print generated manifest for debugging
+                        echo "Generated manifest:"
+                        cat deployment/${manifest}
+                    """
+                }
+                checkError("Deployment YAML Generation Failed")
+            }
+
+            stage('Deploy to AKS') {
+                container('azure-cli') {
+                    sh """
+                        # Deploy application
+                        kubectl apply -f deployment/${manifest}
+
+                        # Wait for application pods to be ready
+                        for service in workflow-manager internet-service iptv-service kos-integration; do
+                            echo "Waiting for \${service} pods..."
+                            kubectl wait --for=condition=ready pod -l "app=\${service}" -n ${props.namespace} --timeout=300s
+                        done
+                    """
+                }
+                checkError("Deployment to AKS Failed")
+            }
+
+            stage('Verify Deployment') {
+                container('azure-cli') {
+                    sh """
+                        echo "Verifying service endpoints..."
+                        
+                        for service in workflow-manager internet-service iptv-service kos-integration; do
+                            IP=\$(kubectl get svc \${service} -n ${props.namespace} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+                            echo "\${service} Service IP: \${IP}"
+                            
+                            if [ -z "\${IP}" ]; then
+                                echo "Error: \${service} IP not available"
+                                exit 1
+                            fi
+                        done
+                    """
+                }
+                checkError("Deployment Verification Failed")
+            }
+
+            currentBuild.result = 'SUCCESS'
+            echo "**** FINISH ALL STAGES : SUCCESS"
+
+        } catch(e) {
+            currentBuild.result = "FAILED"
+            echo "**** ERROR: ${e.getMessage()}"
+            throw e
         }
     }
 }
