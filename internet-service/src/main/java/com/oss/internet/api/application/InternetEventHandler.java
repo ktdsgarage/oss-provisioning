@@ -3,11 +3,10 @@ package com.oss.internet.api.application;
 import com.oss.internet.enums.TaskType;
 import com.oss.common.event.WorkflowEvent;
 import com.oss.internet.api.application.dto.TaskParameters;
-
+import com.oss.common.constants.KafkaConstants;
 import lombok.RequiredArgsConstructor;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
-
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -17,10 +16,9 @@ public class InternetEventHandler {
 
     private final InternetService internetService;
 
-    @KafkaListener(topics = "internet.workflow.created")
+    @KafkaListener(topics = KafkaConstants.TOPIC_INTERNET_WORKFLOW_CREATED, groupId = KafkaConstants.GROUP_INTERNET)
     public void handleWorkflowCreated(WorkflowEvent event) {
         try {
-            // 워크플로우 생성 시 최초 시설 처리 시작
             TaskParameters taskParams = TaskParameters.builder()
                     .taskId(event.getWorkflowId())
                     .taskType(TaskType.FACILITY_ALLOCATION)
@@ -29,15 +27,13 @@ public class InternetEventHandler {
 
             internetService.processTask(event.getWorkflowId(), taskParams);
         } catch (Exception e) {
-            // 에러 이벤트 발행
             internetService.handleError(event.getWorkflowId(), "Failed to process workflow", e);
         }
     }
 
-    @KafkaListener(topics = "internet.facility.allocated")
+    @KafkaListener(topics = KafkaConstants.TOPIC_INTERNET_FACILITY_ALLOCATED, groupId = KafkaConstants.GROUP_INTERNET)
     public void handleFacilityAllocated(WorkflowEvent event) {
         try {
-            // 시설 할당 완료 후 장비 설정 시작
             TaskParameters taskParams = TaskParameters.builder()
                     .taskId(event.getWorkflowId())
                     .taskType(TaskType.DEVICE_CONFIG)
@@ -50,10 +46,9 @@ public class InternetEventHandler {
         }
     }
 
-    @KafkaListener(topics = "internet.device.configured")
+    @KafkaListener(topics = KafkaConstants.TOPIC_INTERNET_DEVICE_CONFIGURED, groupId = KafkaConstants.GROUP_INTERNET)
     public void handleDeviceConfigured(WorkflowEvent event) {
         try {
-            // 장비 설정 완료 후 원부 처리 시작
             TaskParameters taskParams = TaskParameters.builder()
                     .taskId(event.getWorkflowId())
                     .taskType(TaskType.FACILITY_BOOK)
@@ -66,19 +61,18 @@ public class InternetEventHandler {
         }
     }
 
-    @KafkaListener(topics = "internet.facilitybook.updated")
+    @KafkaListener(topics = KafkaConstants.TOPIC_INTERNET_FACILITYBOOK_UPDATED, groupId = KafkaConstants.GROUP_INTERNET)
     public void handleFacilityBookUpdated(WorkflowEvent event) {
         try {
-            // 원부 처리 완료 - 워크플로우 완료 이벤트 발행
             WorkflowEvent completedEvent = WorkflowEvent.builder()
                     .eventId(UUID.randomUUID().toString())
                     .workflowId(event.getWorkflowId())
                     .orderId(event.getOrderId())
-                    .eventType("WORKFLOW_COMPLETED")
+                    .eventType(KafkaConstants.EVENT_WORKFLOW_COMPLETED)
                     .timestamp(LocalDateTime.now())
                     .build();
 
-            internetService.publishEvent("workflow.completed", completedEvent);
+            internetService.publishEvent(KafkaConstants.TOPIC_WORKFLOW_COMPLETED, completedEvent);
         } catch (Exception e) {
             internetService.handleError(event.getWorkflowId(), "Failed to handle facility book update", e);
         }

@@ -1,11 +1,12 @@
-// iptv-service/src/main/java/com/oss/iptv/api/application/IPTVService.java
-
+// IPTVService.java
 package com.oss.iptv.api.application;
 
 import com.oss.common.agent.TaskResult;
 import com.oss.common.event.WorkflowEvent;
 import com.oss.iptv.api.application.dto.AuthRequest;
 import com.oss.common.dto.ErrorEvent;
+import com.oss.common.constants.KafkaConstants;
+import com.oss.iptv.api.application.dto.ChannelConfigRequest;
 import com.oss.iptv.api.application.dto.FacilityBookRequest;
 import com.oss.iptv.api.domain.Auth;
 import com.oss.iptv.api.domain.AuthStatus;
@@ -18,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.time.LocalDateTime;
@@ -34,26 +36,15 @@ public class IPTVService {
 
     @Transactional
     public Auth processTask(String taskId, Object parameters) {
-        // 파라미터 타입에 따라 적절한 처리 수행
         if (parameters instanceof AuthRequest) {
             return processAuth((AuthRequest) parameters);
+        } else if (parameters instanceof ChannelConfigRequest) {
+            return processChannelConfig((ChannelConfigRequest) parameters);
         } else if (parameters instanceof FacilityBookRequest) {
             return updateFacilityBook((FacilityBookRequest) parameters);
         } else {
             throw new IllegalArgumentException("Unsupported parameters type");
         }
-    }
-
-    @Transactional
-    public void cancelTask(String taskId) {
-        // 태스크 취소 로직
-        Auth auth = authRepository.findByTaskId(taskId)
-                .orElseThrow(() -> new RuntimeException("Auth not found"));
-        auth.setStatus(AuthStatus.CANCELLED);
-        authRepository.save(auth);
-
-        // 취소 이벤트 발행
-        kafkaTemplate.send("iptv.auth.cancelled", auth);
     }
 
     @Transactional(readOnly = true)
@@ -75,22 +66,32 @@ public class IPTVService {
         auth.setOrderId(request.getOrderId());
         auth.setStatus(AuthStatus.PROCESSING);
 
-        auth = authRepository.save(auth);  // 저장된 Auth 반환
-        kafkaTemplate.send("iptv.auth", auth);
+        auth = authRepository.save(auth);
+        kafkaTemplate.send(KafkaConstants.TOPIC_IPTV_AUTH_COMPLETED, auth);
 
-        return auth;  // Auth 반환
+        return auth;
+    }
+
+    @Transactional
+    public Auth processChannelConfig(ChannelConfigRequest request) {
+        Auth auth = authRepository.findByOrderId(request.getOrderId())
+                .orElseThrow(() -> new RuntimeException("Auth not found"));
+
+        auth.setChannelConfig(request.getChannelConfig());
+        auth = authRepository.save(auth);
+        kafkaTemplate.send(KafkaConstants.TOPIC_IPTV_CHANNEL_CONFIGURED, auth);
+
+        return auth;
     }
 
     @Transactional
     public Auth updateFacilityBook(FacilityBookRequest request) {
-        // 원장을 업데이트하기 위한 인증 정보 조회
         Auth auth = authRepository.findById(request.getAuthId())
                 .orElseThrow(() -> new RuntimeException("Auth not found"));
 
-        // facility book 업데이트 로직
-        kafkaTemplate.send("iptv.facilitybook", request);
+        kafkaTemplate.send(KafkaConstants.TOPIC_IPTV_FACILITYBOOK_UPDATED, request);
 
-        return auth;  // Auth 반환
+        return auth;
     }
 
     @Transactional
@@ -109,12 +110,12 @@ public class IPTVService {
             WorkflowEvent event = WorkflowEvent.builder()
                     .eventId(UUID.randomUUID().toString())
                     .workflowId(workflowId)
-                    .eventType("WORKFLOW_ERROR")
+                    .eventType(KafkaConstants.EVENT_WORKFLOW_ERROR)
                     .timestamp(LocalDateTime.now())
                     .payload(objectMapper.writeValueAsString(errorEvent))
                     .build();
 
-            kafkaTemplate.send("iptv.workflow.error", event);
+            kafkaTemplate.send(KafkaConstants.TOPIC_IPTV_WORKFLOW_ERROR, event);
 
         } catch (JsonProcessingException jsonEx) {
             log.error("Failed to serialize error event", jsonEx);

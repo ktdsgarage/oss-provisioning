@@ -1,10 +1,11 @@
-// internet-service/src/main/java/com/oss/internet/api/application/InternetService.java
+// InternetService.java
 package com.oss.internet.api.application;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.oss.common.agent.TaskResult;
 import com.oss.common.dto.ErrorEvent;
 import com.oss.common.event.WorkflowEvent;
+import com.oss.common.constants.KafkaConstants;
 import com.oss.internet.api.application.dto.TaskParameters;
 import com.oss.internet.api.domain.*;
 import com.oss.internet.api.infrastructure.*;
@@ -41,7 +42,7 @@ public class InternetService {
         facility.setStatus(FacilityStatus.PROCESSING);
 
         facilityRepository.save(facility);
-        kafkaTemplate.send("internet.facility", facility);
+        kafkaTemplate.send(KafkaConstants.TOPIC_INTERNET_FACILITY_ALLOCATED, facility);
 
         return facility;
     }
@@ -54,14 +55,14 @@ public class InternetService {
         device.setStatus(DeviceStatus.CONFIGURING);
 
         deviceRepository.save(device);
-        kafkaTemplate.send("internet.device", device);
+        kafkaTemplate.send(KafkaConstants.TOPIC_INTERNET_DEVICE_CONFIGURED, device);
 
         return device;
     }
 
     @Transactional
     public Object updateFacilityBook(TaskParameters params) {
-        kafkaTemplate.send("internet.facilitybook", params);
+        kafkaTemplate.send(KafkaConstants.TOPIC_INTERNET_FACILITYBOOK_UPDATED, params);
         return params;
     }
 
@@ -106,29 +107,20 @@ public class InternetService {
         }
     }
 
-    /**
-     * 워크플로우 이벤트를 발행합니다.
-     * @param topic 이벤트를 발행할 Kafka 토픽
-     * @param event 발행할 워크플로우 이벤트
-     */
     public void publishEvent(String topic, WorkflowEvent event) {
         try {
             log.debug("Publishing event to topic {}: {}", topic, event);
 
-            // 토픽이 null이거나 비어있는지 확인
             if (topic == null || topic.trim().isEmpty()) {
                 throw new IllegalArgumentException("Topic cannot be null or empty");
             }
 
-            // 이벤트가 null인지 확인
             if (event == null) {
                 throw new IllegalArgumentException("Event cannot be null");
             }
 
-            // 이벤트 유효성 검증
             validateEvent(event);
 
-            // 이벤트 발행 - CompletableFuture를 직접 사용
             kafkaTemplate.send(topic, event.getWorkflowId(), event)
                     .whenComplete((result, ex) -> {
                         if (ex == null) {
@@ -147,10 +139,6 @@ public class InternetService {
         }
     }
 
-    /**
-     * 워크플로우 이벤트의 유효성을 검증합니다.
-     * @param event 검증할 워크플로우 이벤트
-     */
     private void validateEvent(WorkflowEvent event) {
         if (event.getEventId() == null || event.getEventId().trim().isEmpty()) {
             throw new IllegalArgumentException("Event ID cannot be null or empty");
@@ -173,7 +161,6 @@ public class InternetService {
     public void handleError(String workflowId, String message, Exception e) {
         log.error("Error in workflow {}: {} - {}", workflowId, message, e.getMessage(), e);
 
-        // 에러 정보 생성
         ErrorEvent errorEvent = ErrorEvent.builder()
                 .workflowId(workflowId)
                 .errorType(e.getClass().getSimpleName())
@@ -183,23 +170,21 @@ public class InternetService {
                 .build();
 
         try {
-            // 에러 이벤트 발행
             WorkflowEvent event = WorkflowEvent.builder()
                     .eventId(UUID.randomUUID().toString())
                     .workflowId(workflowId)
-                    .eventType("WORKFLOW_ERROR")
+                    .eventType(KafkaConstants.EVENT_WORKFLOW_ERROR)
                     .timestamp(LocalDateTime.now())
                     .payload(objectMapper.writeValueAsString(errorEvent))
                     .build();
 
-            kafkaTemplate.send("internet.workflow.error", event);
+            kafkaTemplate.send(KafkaConstants.TOPIC_INTERNET_WORKFLOW_ERROR, event);
 
         } catch (JsonProcessingException jsonEx) {
             log.error("Failed to serialize error event", jsonEx);
         }
     }
 
-    // 스택트레이스를 문자열로 변환하는 유틸리티 메소드
     private String getStackTrace(Exception e) {
         StringWriter sw = new StringWriter();
         PrintWriter pw = new PrintWriter(sw);

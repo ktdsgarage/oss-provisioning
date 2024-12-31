@@ -8,4 +8,5 @@ import java.util.Optional;
 
 public interface AuthRepository extends JpaRepository<Auth, Long> {
     Optional<Auth> findByTaskId(String taskId);
+    Optional<Auth> findByOrderId(String orderId);
 }
